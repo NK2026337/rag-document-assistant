@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document Assistant</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #16202b; --muted: #5d6b7a; --line: #dde2e9;
+    --mark: #ffe066; --accent: #1f4fd8; --accent-ink: #ffffff; --err: #b42318; --ok: #1a7f4b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171d; --panel: #1a2129; --ink: #e8edf2; --muted: #93a1b0; --line: #2b3540;
+      --mark: rgba(255, 224, 102, .3); --accent: #7d99ff; --accent-ink: #0b1020; --err: #ff8a80; --ok: #5fd39a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; }
+  button, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100dvh; }
+
+  /* Sidebar */
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 24px 20px;
+    display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+  .brand { font-size: 20px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  .brand small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+
+  .drop { border: 1.5px dashed var(--line); border-radius: 12px; padding: 22px 14px; text-align: center;
+    cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .drop strong { display: block; }
+  .drop span { font-size: 14px; color: var(--muted); }
+  .drop input { display: none; }
+  .drop.busy { cursor: progress; pointer-events: none; }
+
+  .bar { height: 3px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 12px; display: none; }
+  .busy .bar { display: block; }
+  .bar i { display: block; height: 100%; width: 35%; background: var(--accent); border-radius: 3px; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+  .doc { display: none; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .doc.show { display: block; }
+  .doc b { display: block; word-break: break-word; }
+  .doc span { font-size: 14px; color: var(--muted); }
+  .note { font-size: 14px; color: var(--muted); margin: 0; }
+  .note.err { color: var(--err); }
+
+  .status { margin-top: auto; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.up { background: var(--ok); } .dot.down { background: var(--err); }
+
+  /* Chat */
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #chat { flex: 1; overflow-y: auto; padding: 32px 24px 8px; }
+  .col { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+  .empty h2 { font-size: 26px; line-height: 1.25; letter-spacing: -.015em; margin: 12vh 0 10px; max-width: 18ch; }
+  .empty p { color: var(--muted); margin: 0 0 6px; max-width: 52ch; }
+  .tips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .tip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 14px; cursor: pointer; font-size: 15px; }
+  .tip:hover { border-color: var(--accent); }
+
+  .user { align-self: flex-end; max-width: 80%; background: var(--accent); color: var(--accent-ink);
+    padding: 9px 15px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; }
+  .bot { max-width: 100%; }
+  .bot .text { white-space: pre-wrap; max-width: 68ch; }
+  .bot.err .text { color: var(--err); }
+  .wait { color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .wait i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  .cite { border: 0; background: var(--mark); color: var(--ink); border-radius: 4px; padding: 0 6px; margin: 0 1px;
+    font-size: 13px; font-weight: 600; cursor: pointer; vertical-align: 1px; }
+  .cite:hover { filter: brightness(.95); }
+
+  details.sources { margin-top: 12px; font-size: 14px; max-width: 68ch; }
+  details.sources summary { cursor: pointer; color: var(--muted); width: fit-content; }
+  .src { margin-top: 10px; padding-left: 12px; border-left: 3px solid var(--line); }
+  .src h4 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+  .src p { margin: 0; color: var(--muted); }
+  .src mark { background: var(--mark); color: var(--ink); padding: 1px 2px; border-radius: 2px; }
+  .src.flash { animation: flash 1.4s ease-out; }
+  @keyframes flash { 0% { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); } 100% { background: transparent; } }
+
+  /* Composer */
+  form { padding: 12px 24px 22px; }
+  .box { max-width: 720px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 16px; }
+  .box:focus-within { border-color: var(--accent); }
+  textarea { flex: 1; border: 0; background: transparent; resize: none; outline: none; max-height: 140px; padding: 7px 0; }
+  textarea::placeholder { color: var(--muted); }
+  #send { border: 0; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 9px 18px; font-weight: 600; cursor: pointer; }
+  #send:disabled { opacity: .45; cursor: not-allowed; }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 14px 16px; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+    .brand small, .note { display: none; }
+    .drop { padding: 8px 14px; } .drop span { display: none; }
+    .status { margin: 0 0 0 auto; }
+    #chat { padding: 18px 16px 8px; } form { padding: 10px 14px 16px; }
+    .empty h2 { margin-top: 4vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1 class="brand">Document Assistant<small>Ask questions, see the pages behind each answer.</small></h1>
+
+    <label class="drop" id="drop" tabindex="0">
+      <input type="file" id="file" accept=".pdf,application/pdf">
+      <strong id="dropTitle">Upload a PDF</strong>
+      <span id="dropHint">Drop a file here or click to browse</span>
+      <div class="bar"><i></i></div>
+    </label>
+
+    <div class="doc" id="doc"><b id="docName"></b><span id="docMeta"></span></div>
+    <p class="note" id="note">Large PDFs can take several minutes to index. Keep this tab open.</p>
+
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Checking backend</span></div>
+  </aside>
+
+  <main>
+    <div id="chat"><div class="col" id="col">
+      <div class="empty" id="empty">
+        <h2>What do you want to know about your document?</h2>
+        <p>Specific questions get the best answers. Broad ones like "summarize everything" work poorly.</p>
+        <div class="tips">
+          <button type="button" class="tip">What does the &lt;p&gt; tag do?</button>
+          <button type="button" class="tip">How do I create a table?</button>
+          <button type="button" class="tip">How do I add an image?</button>
+        </div>
+      </div>
+    </div></div>
+
+    <form id="form">
+      <div class="box">
+        <textarea id="q" rows="1" placeholder="Ask a question about your document" aria-label="Your question"></textarea>
+        <button type="submit" id="send">Ask</button>
+      </div>
+    </form>
+  </main>
+</div>
+
+<script>
+  // Change this to your deployed backend URL when you publish the project.
+const API = location.protocol === "file:" ? "http://127.0.0.1:8000" : location.origin;
+
+  const $ = (id) => document.getElementById(id);
+  const col = $("col"), chat = $("chat"), q = $("q"), send = $("send");
+  let msgId = 0;
+
+  /* Backend status */
+  async function checkBackend() {
+    try {
+      const r = await fetch(API + "/");
+      if (!r.ok) throw 0;
+      $("dot").className = "dot up"; $("statusText").textContent = "Backend connected";
+    } catch {
+      $("dot").className = "dot down"; $("statusText").textContent = "Backend offline";
+    }
+  }
+  checkBackend(); setInterval(checkBackend, 15000);
+
+  /* Upload */
+  const drop = $("drop"), fileInput = $("file");
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]); });
+  drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+  fileInput.addEventListener("change", () => { if (fileInput.files.length) upload(fileInput.files[0]); });
+
+  async function upload(file) {
+    const note = $("note");
+    note.className = "note"; note.style.display = "";
+    if (!file.name.toLowerCase().endsWith(".pdf")) { note.textContent = "Only PDF files are supported."; note.className = "note err"; return; }
+
+    drop.classList.add("busy");
+    const start = Date.now();
+    const tick = setInterval(() => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      $("dropTitle").textContent = "Indexing " + Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+    }, 1000);
+    $("dropTitle").textContent = "Indexing 0m 00s";
+    $("dropHint").textContent = file.name;
+    note.textContent = "Large PDFs can take several minutes to index. Keep this tab open.";
+
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const res = await fetch(API + "/upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Upload failed.");
+      $("docName").textContent = data.filename;
+      $("docMeta").textContent = data.chunks_indexed + " passages indexed";
+      $("doc").classList.add("show");
+      note.style.display = "none";
+    } catch (err) {
+      note.textContent = err.message === "Failed to fetch"
+        ? "Can't reach the backend. Start it with: uvicorn main:app --reload (inside the backend folder)."
+        : err.message;
+      note.className = "note err";
+    } finally {
+      clearInterval(tick);
+      drop.classList.remove("busy");
+      $("dropTitle").textContent = "Upload a PDF";
+      $("dropHint").textContent = "Drop a file here or click to browse";
+      fileInput.value = "";
+    }
+  }
+
+  /* Chat helpers */
+  function addUser(text) {
+    const d = document.createElement("div"); d.className = "user"; d.textContent = text;
+    col.appendChild(d); scrollDown(); return d;
+  }
+  function addBot() {
+    const d = document.createElement("div"); d.className = "bot";
+    d.setAttribute("aria-live", "polite");
+    col.appendChild(d); scrollDown(); return d;
+  }
+  function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+
+  function renderAnswer(el, answer, sources) {
+    const id = "m" + (++msgId);
+    el.innerHTML = "";
+    const text = document.createElement("div"); text.className = "text";
+    answer.split(/\[(\d+)\]/g).forEach((part, i) => {
+      if (i % 2 === 0) { text.appendChild(document.createTextNode(part)); return; }
+      const n = parseInt(part, 10);
+      if (n >= 1 && n <= sources.length) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "cite"; b.textContent = n;
+        b.title = "Show page " + sources[n - 1].page;
+        b.addEventListener("click", () => {
+          const det = $(id); det.open = true;
+          const target = $(id + "-" + n);
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+        });
+        text.appendChild(b);
+      } else { text.appendChild(document.createTextNode("[" + part + "]")); }
+    });
+    el.appendChild(text);
+
+    if (sources && sources.length) {
+      const det = document.createElement("details"); det.className = "sources"; det.id = id;
+      const sum = document.createElement("summary");
+      const pages = [...new Set(sources.map(s => s.page))];
+      sum.textContent = "Sources: page" + (pages.length > 1 ? "s " : " ") + pages.join(", ");
+      det.appendChild(sum);
+      sources.forEach((s, i) => {
+        const box = document.createElement("div"); box.className = "src"; box.id = id + "-" + (i + 1);
+        const h = document.createElement("h4"); h.textContent = "[" + (i + 1) + "] " + s.source + ", page " + s.page;
+        box.appendChild(h);
+        if (s.preview) {
+          const p = document.createElement("p"), m = document.createElement("mark");
+          m.textContent = s.preview.replace(/\s+/g, " ").trim() + "…";
+          p.appendChild(m); box.appendChild(p);
+        }
+        det.appendChild(box);
+      });
+      el.appendChild(det);
+    }
+  }
+
+  async function ask(question) {
+    $("empty")?.remove();
+    addUser(question);
+    const bot = addBot();
+    const start = Date.now();
+    bot.innerHTML = '<div class="wait"><i></i><span>Searching your document… 0s</span></div>';
+    const tick = setInterval(() => {
+      const span = bot.querySelector(".wait span");
+      if (span) span.textContent = "Searching your document… " + Math.floor((Date.now() - start) / 1000) + "s";
+    }, 1000);
+    send.disabled = true;
+
+    try {
+      const res = await fetch(API + "/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "The request failed.");
+      renderAnswer(bot, data.answer, data.sources || []);
+    } catch (err) {
+      bot.classList.add("err");
+      bot.innerHTML = "";
+      const t = document.createElement("div"); t.className = "text";
+      t.textContent = err.message === "Failed to fetch"
+        ? "Can't reach the backend. Start it with: uvicorn main:app --reload (inside the backend folder)."
+        : err.message;
+      bot.appendChild(t);
+    } finally {
+      clearInterval(tick); send.disabled = false; scrollDown(); q.focus();
+    }
+  }
+
+  /* Composer */
+  $("form").addEventListener("submit", e => {
+    e.preventDefault();
+    const text = q.value.trim();
+    if (!text || send.disabled) return;
+    q.value = ""; q.style.height = "auto";
+    ask(text);
+  });
+  q.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); }
+  });
+  q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 140) + "px"; });
+  document.querySelectorAll(".tip").forEach(t => t.addEventListener("click", () => { q.value = t.textContent; $("form").requestSubmit(); }));
+</script>
+</body>
+</html>
