@@ -1,6 +1,6 @@
-   fastapi
-   uvicorn[standard]
-   python-multipart
-   pypdf
-   numpy
-   ollama
+fastapi
+uvicorn[standard]
+python-multipart
+pypdf
+numpy
+ollama
